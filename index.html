@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script type="application/javascript" src="vosk.js"></script>
+    <title>Document</title>
+    <style>
+      body {
+        margin: 0;
+      }
+
+      .hitbox {
+        background-color: transparent;
+        border: 2px solid red;
+        position: absolute;
+        inset: 0;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="page">
+        <img src="views/welcome.png" alt="" />
+        <div
+          onclick="goNext()"
+          class="hitbox"
+          style="width: 34vw; height: 17vh; top: 22vh; left: 33vw"
+        ></div>
+      </div>
+      <div class="page">
+        <img src="views/girl-brief.png" alt="" />
+      </div>
+      <div class="page">
+        <img src="views/girl-notification.png" alt="" />
+        <div
+          onclick="goNext()"
+          class="hitbox"
+          style="width: 34vw; height: 9vh; top: 76vh; left: 9vw"
+        ></div>
+      </div>
+      <div class="page">
+        <img src="views/girl-messages.png" alt="" />
+        <div
+          onclick="playPause()"
+          class="hitbox"
+          style="width: 88vw; height: 25vh; top: 16vh; left: 5vw"
+        ></div>
+      </div>
+      <div
+        onclick="goTo(0)"
+        class="hitbox"
+        style="width: 18vw; height: 8vh; top: 91vh; left: 8vw"
+      ></div>
+      <audio id="last-record"></audio>
+    </main>
+
+    <script>
+      let displayIndex = 0;
+      let isListening = false;
+      let isRecording = false;
+
+      const startWords = [
+        "mom",
+        "want",
+        "wanted",
+        "see",
+        "sea",
+        "flowers",
+        "flower",
+      ];
+      const endingWords = ["listen", "to me", "first", "sent", "felt"];
+
+      const pages = Array.from(document.querySelectorAll("main > .page"));
+      console.log(pages);
+      refreshView();
+
+      function goTo(index) {
+        displayIndex = index;
+        refreshView();
+      }
+
+      function goNext() {
+        displayIndex += 1;
+        refreshView();
+      }
+
+      function refreshView() {
+        if (displayIndex == 1) {
+          isListening = true;
+        } else {
+          isListening = false;
+        }
+
+        pages.forEach((el, i) => {
+          console.log(i);
+          if (i == displayIndex) {
+            el.style.display = "unset";
+          } else {
+            el.style.display = "none";
+          }
+        });
+      }
+
+      function startListening() {
+        isListening = true;
+      }
+
+      function startRecording() {
+        isRecording = true;
+        console.log("recording started");
+      }
+
+      function stopRecording() {
+        isRecording = false;
+        console.log("recording stopped");
+      }
+
+      function playPause() {
+        const audio = document.querySelector("#last-record");
+        console.log(audio);
+      }
+
+      async function init() {
+        const channel = new MessageChannel();
+        const model = await Vosk.createModel("vosk-model-small-en-us-0.15.zip");
+        model.registerPort(channel.port1);
+
+        const sampleRate = 48000;
+
+        const recognizer = new model.KaldiRecognizer(sampleRate);
+        recognizer.setWords(true);
+
+        recognizer.on("result", (message) => {
+          const result = message.result;
+          console.log("result", JSON.stringify(result, null, 2));
+
+          if (isRecording) {
+            endingWords.forEach((w) => {
+              if (result.text.includes(w) && isRecording) {
+                stopRecording();
+                goNext();
+              }
+            });
+          }
+        });
+        recognizer.on("partialresult", (message) => {
+          const partial = message.result.partial;
+
+          console.log(isListening, isRecording, partial);
+
+          if (isListening && !isRecording) {
+            startWords.forEach((w) => {
+              if (partial.includes(w)) {
+                startRecording();
+              }
+            });
+          }
+        });
+
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: false,
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            channelCount: 1,
+            sampleRate,
+          },
+        });
+
+        const audioContext = new AudioContext();
+        await audioContext.audioWorklet.addModule("recognizer-processor.js");
+        const recognizerProcessor = new AudioWorkletNode(
+          audioContext,
+          "recognizer-processor",
+          { channelCount: 1, numberOfInputs: 1, numberOfOutputs: 1 }
+        );
+        recognizerProcessor.port.postMessage(
+          { action: "init", recognizerId: recognizer.id },
+          [channel.port2]
+        );
+        recognizerProcessor.connect(audioContext.destination);
+
+        const source = audioContext.createMediaStreamSource(mediaStream);
+        source.connect(recognizerProcessor);
+      }
+
+      window.onload = () => {
+        init();
+      };
+    </script>
+  </body>
+</html>
