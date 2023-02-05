@@ -18,6 +18,11 @@
         inset: 0;
         cursor: pointer;
       }
+
+      img {
+        width: 100vw;
+        height: 100vh;
+      }
     </style>
   </head>
   <body>
@@ -61,6 +66,8 @@
       let displayIndex = 0;
       let isListening = false;
       let isRecording = false;
+      const audioEl = document.querySelector("#last-record");
+      let mediaRecorder = null;
 
       const startWords = [
         "mom",
@@ -109,18 +116,39 @@
       }
 
       function startRecording() {
-        isRecording = true;
-        console.log("recording started");
+        if (mediaRecorder) {
+          isRecording = true;
+          console.log("recording started");
+
+          mediaRecorder.start();
+          console.log(mediaRecorder.state);
+          console.log("recorder started");
+          stop.disabled = false;
+        }
       }
 
       function stopRecording() {
-        isRecording = false;
-        console.log("recording stopped");
+        if (mediaRecorder) {
+          isRecording = false;
+          console.log("recording stopped");
+
+          mediaRecorder.stop();
+          console.log(mediaRecorder.state);
+          console.log("recorder stopped");
+          // mediaRecorder.requestData();
+          stop.disabled = true;
+        }
       }
 
       function playPause() {
         const audio = document.querySelector("#last-record");
         console.log(audio);
+        if (audio.paused) {
+          audio.play();
+        } else {
+          audio.pause();
+          audio.fastSeek(0);
+        }
       }
 
       async function init() {
@@ -185,6 +213,40 @@
 
         const source = audioContext.createMediaStreamSource(mediaStream);
         source.connect(recognizerProcessor);
+
+        // recorder
+        let chunks = [];
+        mediaRecorder = new MediaRecorder(mediaStream);
+        document.addEventListener("keydown", (event) => {
+          const keyName = event.key;
+          console.log(event);
+
+          if (keyName === "a" && mediaRecorder.state != "recording") {
+            startRecording();
+          }
+
+          if (keyName === "b") {
+            stopRecording();
+          }
+
+          if (keyName === "c") {
+            playPause();
+          }
+        });
+
+        mediaRecorder.onstop = function (e) {
+          console.log("data available after MediaRecorder.stop() called.");
+
+          const blob = new Blob(chunks, { type: "audio/ogg; codecs=opus" });
+          chunks = [];
+          const audioURL = window.URL.createObjectURL(blob);
+          audioEl.src = audioURL;
+          console.log("recorder stopped");
+        };
+
+        mediaRecorder.ondataavailable = function (e) {
+          chunks.push(e.data);
+        };
       }
 
       window.onload = () => {
